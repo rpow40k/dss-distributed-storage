@@ -133,6 +133,37 @@ For a DSS of `n` disks, each stripe holds `n - 1` data blocks and one parity blo
 
 Usable capacity is `(n - 1) / n` of the raw capacity, and any single disk can be lost without losing data.
 
+## Technologies used
+
+- **Python 3** (standard library only)
+- **`socket`**: UDP datagram sockets (`AF_INET`, `SOCK_DGRAM`)
+- **`json`**: message encoding
+- **`threading`**: lock around shared manager state
+- **`logging`**: per-process logs
+- **`datetime`**: timestamps and message IDs
+- **`subprocess`**: launching processes in the demo
+- **`unittest`**: loopback integration tests
+- **Git and GitHub**: version control and hosting
+- **Mermaid**: architecture and sequence diagrams in this README
+
+## How the technologies were used
+
+**Sockets (UDP).** Each process opens its own `SOCK_DGRAM` socket. The manager binds to a well-known port and receives from any sender with `recvfrom`, which also returns the sender's address, so it can reply to whoever asked. Disks and users bind to their own command ports after registering. Sockets use a timeout (5 seconds by default), so a lost datagram produces a timeout and an error message instead of a hang.
+
+**JSON.** Each message is one JSON object in one datagram, with `command`, `params`, `timestamp` and `message_id`. Because UDP preserves message boundaries, there is no framing code. The manager turns the command name into a handler name (`register-disk` becomes `_handle_register_disk`) and looks it up with `getattr`, so adding a command means adding one method. A message that is not valid JSON is logged and ignored.
+
+**Threading.** The manager holds a `threading.Lock` while a handler runs, so two messages cannot update the registry, the DSS list, or the in-flight copy, read and failure operations at the same time. That keeps checks like "is a copy already in progress?" consistent.
+
+**Logging.** Every process logs through `logging` with a process name and timestamp, so interleaved output from the manager, disks and a user reads as a single trace of the protocol. Message-building details go to `DEBUG` level so they stay out of normal output.
+
+**Datetime.** Timestamps stamp each message and reply, and message IDs are built from the current time, giving each message a unique identifier for tracing in the logs.
+
+**Subprocess.** `scripts/demo.py` starts the manager and three disks as separate OS processes, then runs the user shell in the foreground. This shows the system running as independent processes that talk only over sockets, the way they would on separate machines.
+
+**Unittest.** The tests start a real manager on a loopback port in a background thread and send it raw UDP messages. They check name and port validation, duplicate-port rejection, DSS creation rules, and the `ls` command, which exercises the protocol without needing a user terminal.
+
+**Git, GitHub and Mermaid.** The project history is in Git on GitHub. The diagrams are Mermaid code blocks, which GitHub renders directly from the README.
+
 ## How this relates to real systems
 
 | In this project | In real systems |
